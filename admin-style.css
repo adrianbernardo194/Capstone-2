@@ -1,0 +1,137 @@
+/* Layout Positioning - Fixes the "Middle Centering" */
+.admin-dashboard-layout {
+    display: flex;
+    background-color: #f8fafc;
+    min-height: 100vh;
+    width: 100%;
+}
+
+.portal-content {
+    flex: 1;
+    margin-left: 80px; /* Space for sidebar */
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch; /* Forces children to take full width */
+}
+
+/* Header Alignment */
+.admin-header {
+    margin-bottom: 40px;
+    text-align: left; /* Ensures title isn't centered */
+}
+
+/* Horizontal Stats - The "4-Column" Row */
+.stats-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* 4 equal columns across the screen */
+    gap: 25px;
+    margin-bottom: 40px;
+}
+
+/* 1. The Circular Container */
+.stat-icon-bg {
+    width: 42px;           /* Fixed small size for the circle */
+    height: 42px;
+    background-color: rgba(0, 0, 0, 0.04); /* Very light grey circle */
+    border-radius: 50%;    /* Makes it a perfect circle */
+    display: flex;         /* Enables centering */
+    align-items: center;   /* Vertical center */
+    justify-content: center; /* Horizontal center */
+    flex-shrink: 0;        /* Prevents the circle from squishing */
+}
+
+/* 2. The Actual Image Scaling */
+.stat-icon-bg img {
+    width: 20px;           /* Small, professional icon size */
+    height: 20px;
+    object-fit: contain;   /* Prevents stretching */
+    opacity: 0.6;          /* Subtler look like the reference */
+}
+
+/* 3. Adjust the Stat Card Layout */
+.stat-card {
+    background: white;
+    padding: 20px 24px;
+    border-radius: 12px;
+    border: 1px solid #edf2f7;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;             /* Space between text and icon */
+}
+
+/* 4. Ensure Typography is aligned */
+.stat-info span {
+    font-size: 13px;
+    color: #718096;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.stat-info h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a202c;
+    margin: 0;
+}
+
+/* Complaint List - Professional Row Layout */
+.complaint-row {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 30px;
+    margin-bottom: 15px;
+    display: grid;
+    /* Allocated space for ID, Details, and Button */
+    grid-template-columns: 150px 1fr 150px; 
+    align-items: center;
+    border: 1px solid #edf2f7;
+}
+
+.row-details {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* Splits Subject, Reporter, Date */
+    gap: 20px;
+}
+
+/* Text and Labels */
+.detail-item label {
+    display: block;
+    font-size: 11px;
+    color: #718096;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.detail-item strong {
+    font-size: 14px;
+    color: #2d3748;
+}
+
+/* The Pending Indicator Logic */
+.complaint-row.status-pending {
+    border-left: 5px solid #ed8936; /* Bright Orange left border */
+    background-color: #fffaf0;     /* Very subtle orange tint for the whole box */
+}
+
+/* Optional: Make the text "Pending" orange too */
+.badge.pending {
+    background-color: #feebc8;
+    color: #c05621;
+    border: 1px solid #fbd38d;
+}
+
+/* Ensure the row still looks organized */
+.complaint-row {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 30px;
+    margin-bottom: 15px;
+    display: grid;
+    grid-template-columns: 150px 1fr 150px;
+    align-items: center;
+    border: 1px solid #edf2f7;
+    transition: all 0.2s ease;
+}

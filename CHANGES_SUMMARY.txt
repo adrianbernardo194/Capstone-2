@@ -1,0 +1,71 @@
+====================================================================
+MANUAL CHANGES NEEDED IN FILES YOU ALREADY HAVE ON YOUR COMPUTER
+====================================================================
+These are the ONLY text changes needed. Find and replace each one.
+
+--------------------------------------------------------------------
+FILE: admin-view-complaint.php  (the one on your computer)
+--------------------------------------------------------------------
+
+FIND:    .status-pill.in-remediation   { background:#dbeafe;color:#1e40af; }
+REPLACE: .status-pill.in-process       { background:#dbeafe;color:#1e40af; }
+
+FIND:    .sopt[data-v="In Remediation"].sel
+REPLACE: .sopt[data-v="In Process"].sel
+
+FIND:    <label class="sopt" data-v="In Remediation">
+REPLACE: <label class="sopt" data-v="In Process">
+
+FIND:    <input type="radio" name="ns" value="In Remediation">
+REPLACE: <input type="radio" name="ns" value="In Process">
+
+FIND:    <strong>🔄 Needs Follow-Up / Resubmission</strong>
+         <small>More details or documents needed from the complainant.</small>
+REPLACE: <strong>🔄 In Process / Follow-Up</strong>
+         <small>Case is now in process. Use this for follow-up or requests for more info.</small>
+
+--------------------------------------------------------------------
+FILE: admin-dashboard.php  (the one on your computer)
+--------------------------------------------------------------------
+
+FIND:    SELECT COUNT(*) as total FROM complaints WHERE status='In Remediation'
+REPLACE: SELECT COUNT(*) as total FROM complaints WHERE status='In Process'
+
+FIND:    <span>In Remediation</span>
+REPLACE: <span>In Process</span>
+
+--------------------------------------------------------------------
+FILE: admin-lupon-assignments.php  (the one on your computer)
+--------------------------------------------------------------------
+
+FIND:    .assign-status-pill.in-remediation { background:#dbeafe;color:#1e40af; }
+REPLACE: .assign-status-pill.in-process     { background:#dbeafe;color:#1e40af; }
+
+FIND:    foreach(['8:00 AM','9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'] as $ts):
+REPLACE: foreach(['9:00 AM','10:00 AM','11:00 AM','12:00 PM'] as $ts):
+
+--------------------------------------------------------------------
+FILE: admin-committee.php  (the one on your computer)
+--------------------------------------------------------------------
+
+FIND:    .h-status.in-remediation { background:#dbeafe;color:#1e40af; }
+REPLACE: .h-status.in-process     { background:#dbeafe;color:#1e40af; }
+
+--------------------------------------------------------------------
+DATABASE — Run this in phpMyAdmin:
+--------------------------------------------------------------------
+
+UPDATE complaints SET status = 'In Process' WHERE status = 'In Remediation';
+UPDATE resident_notifications SET type = 'in_process' WHERE type = 'followup';
+
+====================================================================
+NEW FILES TO COPY (replace these on your computer):
+====================================================================
+- view-complaint.php          (new time slots + slot blocking + In Process)
+- get_resident_notifications.php  (new get_timeslots action)
+- get_admin_availability.php  (slot-level blocking for admin)
+- save_appointment.php        (In Process + slot blocking)
+- admin_assign_lupon.php      (In Process + slot blocking + 9am-12pm only)
+- update_status.php           (In Process instead of In Remediation)
+- migration_v6.sql            (run in phpMyAdmin)
+====================================================================

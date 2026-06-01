@@ -1,0 +1,143 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    background-color: #fdfdfd;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    display: flex;
+    width: 90%;
+    max-width: 1100px;
+    align-items: center;
+    justify-content: space-around;
+}
+
+/* Branding Left Side */
+.main-logo { width: 200px; margin-bottom: 20px; }
+.brand-top { color: #2D6A4F; font-size: 1.8rem; letter-spacing: 1px; }
+.brand-middle { color: #1B4332; font-size: 4rem; font-weight: 800; line-height: 0.9; }
+.brand-bottom { color: #6c757d; font-weight: 600; font-size: 0.95rem; margin-top: 5px; }
+
+/* Card */
+.login-card {
+    background: #fff;
+    padding: 50px;
+    border-radius: 24px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.03);
+    width: 480px;
+    text-align: left;
+}
+
+h2 { color: #2D6A4F; font-size: 2.2rem; font-weight: 700; }
+.subtitle { color: #444; margin-bottom: 25px; }
+
+/* THE SLIDING TABS */
+.tab-wrapper {
+    margin-bottom: 30px;
+}
+
+.tab-container {
+    display: flex;
+    position: relative;
+    background-color: #E9ECEF;
+    padding: 6px;
+    border-radius: 12px;
+    height: 56px;
+}
+
+.tab-container input {
+    display: none; /* Hide radio buttons */
+}
+
+.tab-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #6c757d;
+    cursor: pointer;
+    z-index: 2;
+    transition: color 0.3s ease;
+}
+
+.tab-icon {
+    width: 18px;
+    margin-right: 10px;
+    transition: filter 0.3s ease;
+}
+
+/* The Green Sliding Pill */
+.glider {
+    position: absolute;
+    height: 44px;
+    width: calc(50% - 6px); /* Half minus padding */
+    background: #388E3C;
+    z-index: 1;
+    border-radius: 10px;
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Logic for Sliding and Icon Coloring */
+#admin:checked ~ .glider { transform: translateX(0); }
+#resident:checked ~ .glider { transform: translateX(100%); }
+
+#admin:checked ~ label[for="admin"],
+#resident:checked ~ label[for="resident"] {
+    color: #fff;
+}
+
+/* White icons when active */
+#admin:checked ~ label[for="admin"] .tab-icon,
+#resident:checked ~ label[for="resident"] .tab-icon {
+    filter: brightness(0) invert(1);
+}
+
+/* Form Elements */
+.input-field {
+    width: 100%;
+    padding: 16px;
+    margin-bottom: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    background: #F8F9FA;
+    outline: none;
+}
+
+.form-options {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 30px;
+}
+
+.forgot-password { color: #388E3C; text-decoration: none; font-weight: 700; }
+
+/* Gradient Button */
+.login-btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 30px;
+    background: linear-gradient(135deg, #43A047 0%, #2D6A4F 100%);
+    color: white;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(56, 142, 60, 0.3);
+}
+
+.btn-icon { width: 20px; margin-right: 10px; }

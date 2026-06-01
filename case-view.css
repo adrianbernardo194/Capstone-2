@@ -1,0 +1,86 @@
+/* Header Layout */
+.case-header-bar {
+    display: flex;
+    justify-content: space-between; /* Actions Left, ID Right */
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 10px 0;
+}
+
+.header-identity-right { text-align: right; }
+.case-number-title { font-size: 24px; color: #1a202c; margin: 0; }
+.case-category { font-size: 14px; color: #28a745; font-weight: 600; }
+
+/* Action Buttons */
+.btn-action {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 500;
+    margin-right: 10px;
+}
+.btn-status { background: #28a745; color: white; border: none; }
+
+/* Card Styling */
+.detail-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 20px;
+    border: 1px solid #edf2f7;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+}
+
+.split-card { display: flex; gap: 40px; }
+.column-half { flex: 1; }
+.border-left { border-left: 1px solid #f1f5f9; padding-left: 40px; }
+
+/* Typography */
+label { font-size: 11px; color: #a0aec0; text-transform: uppercase; display: block; margin-bottom: 4px; }
+strong, span { font-size: 15px; color: #2d3748; display: block; margin-bottom: 15px; font-weight: 600; }
+
+/* Evidence Image */
+.resident-upload {
+    width: 100%;
+    max-width: 500px;
+    border-radius: 8px;
+    border: 1px solid #eee;
+    margin-top: 10px;
+}
+
+.evidence-container {
+    padding-top: 15px;
+}
+
+.image-wrapper {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 15px;
+    border: 1px dashed #e2e8f0;
+    text-align: center;
+}
+
+.resident-upload {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 10px;
+}
+
+.image-caption {
+    font-size: 12px;
+    color: #64748b;
+    font-style: italic;
+}
+
+.no-image {
+    color: #94a3b8;
+    font-style: italic;
+    padding: 20px;
+    text-align: center;
+    background: #f8fafc;
+    border-radius: 8px;
+}

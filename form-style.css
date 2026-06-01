@@ -1,0 +1,139 @@
+/* --- EXISTING FORM STYLES --- */
+.top-nav { width: 100%; max-width: 900px; margin-bottom: 20px; }
+.back-link { text-decoration: none; color: #666; font-size: 0.9rem; font-weight: 500; }
+
+.form-header { text-align: center; margin-bottom: 30px; }
+.form-header h2 { color: #003366; font-size: 1.2rem; }
+.form-header p { font-size: 0.85rem; color: #555; }
+
+.form-container {
+    background: white;
+    width: 100%;
+    max-width: 900px;
+    padding: 50px;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.05);
+    margin-bottom: 50px;
+}
+
+.form-title { text-align: center; font-size: 1.5rem; margin-bottom: 10px; color: #333; }
+.form-intro { font-size: 0.85rem; text-align: center; color: #666; margin-bottom: 30px; line-height: 1.6; }
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 30px 0 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.section-icon { width: 20px; filter: invert(36%) sepia(85%) saturate(452%) hue-rotate(105deg) brightness(91%) contrast(87%); }
+.section-header h3 { font-size: 1rem; color: #2D6A4F; }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: #444; }
+
+input[type="text"], input[type="date"], textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #f8f9fa;
+    font-size: 0.9rem;
+}
+
+textarea { height: 100px; resize: vertical; }
+
+.upload-box { background: #fdfdfd; border: 1px dashed #ccc; padding: 20px; border-radius: 6px; text-align: center; }
+.file-hint { font-size: 0.75rem; color: #999; margin-top: 10px; }
+
+.form-footer { margin-top: 40px; padding: 20px; background: #f9f9f9; border-radius: 6px; font-size: 0.85rem; line-height: 1.8; color: #555; }
+
+.form-actions { display: flex; gap: 15px; margin-top: 30px; }
+.submit-btn { flex: 1; background: #2D6A4F; color: white; border: none; padding: 15px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.cancel-btn { padding: 15px 30px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; }
+
+/* --- INTEGRATED MODAL STYLES --- */
+
+#successModal.modal-overlay {
+    position: fixed !important; /* Locks it to the screen, not the container */
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(0, 0, 0, 0.85) !important;
+    z-index: 999999 !important; /* Unbeatable layer */
+    justify-content: center;
+    align-items: center;
+    /* Ensure no other file hid it with opacity */
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.modal-content {
+    background: white;
+    padding: 40px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 420px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    animation: slideUp 0.3s ease-out; /* Makes it pop up nicely */
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.success-icon {
+    width: 70px;
+    height: 70px;
+    background: #e8f5e9;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto 20px;
+}
+
+.success-icon img {
+    width: 40px;
+    /* Keeps your green icon style */
+    filter: sepia(100%) hue-rotate(90deg) saturate(2); 
+}
+
+/* Modal Buttons - Modern & Organized */
+.modal-choices {
+    display: flex;
+    flex-direction: column; /* Stacked for better readability */
+    gap: 12px;
+    margin-top: 25px;
+}
+
+.modal-choices button {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: none;
+    transition: background 0.2s;
+}
+
+.view-btn {
+    background: #2D6A4F;
+    color: white;
+}
+
+.view-btn:hover { background: #1b4332; }
+
+.return-btn {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.return-btn:hover { background: #e2e8f0; }
