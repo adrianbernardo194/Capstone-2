@@ -2,6 +2,14 @@
 require_once 'session_check_admin.php';
 include 'db.php';
 
+// Avatar initials from the admin's name
+$admin_display_name = $session_admin_name ?? 'Admin';
+$admin_name_parts = preg_split('/\s+/', trim($admin_display_name));
+$admin_initials = strtoupper(substr($admin_name_parts[0], 0, 1) . substr($admin_name_parts[count($admin_name_parts) - 1] ?? '', 0, 1));
+if (count($admin_name_parts) < 2) {
+    $admin_initials = strtoupper(substr($admin_name_parts[0], 0, 2));
+}
+
 // ── Fetch all approved complaints that have a resident-requested schedule ──
 // Status = 'Approved' OR 'In Remediation' (after resident picked schedule)
 // and appointment_date is set (resident already chose their preferred slot)
@@ -21,17 +29,214 @@ $pending_assign = $conn->query("
 $lupon_all = $conn->query("SELECT * FROM lupon_members WHERE is_active=1 ORDER BY name");
 $lupon_members = [];
 while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
+
+// Highlight a specific complaint card if linked from a notification
+$highlight_id = (int)($_GET['complaint_id'] ?? 0);
+if ($highlight_id > 0) {
+    $conn->query("UPDATE notifications SET is_read=1 WHERE complaint_id=$highlight_id AND type='new_appointment'");
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lupon Assignments - Barangay San Roque</title>
-    <link rel="stylesheet" href="portal-style.css">
     <link rel="stylesheet" href="admin-style.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background:#f8fafc; }
+        :root {
+            --green-900: #1B4332;
+            --green-700: #2D6A4F;
+            --green-500: #40916c;
+            --green-100: #e8f5e9;
+            --border: #e0ede5;
+            --muted: #52796f;
+        }
+
+        /* =============================================
+           TOP BAR + SIDEBAR RAIL — matches admin-dashboard.php
+           ============================================= */
+
+        * { box-sizing: border-box; }
+        * { font-family: 'Poppins', sans-serif; }
+
+        html, body { margin: 0; padding: 0; overflow-x: hidden; }
+        body {
+            background:#f8fafc;
+            opacity: 0;
+            animation: pageFadeIn .4s ease forwards;
+        }
+        @keyframes pageFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        body.page-exit {
+            animation: pageFadeOut .28s ease forwards;
+        }
+        @keyframes pageFadeOut {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+
+        .sidebar {
+            width: 76px;
+            height: 100vh;
+            background: #004d2c;
+            position: fixed;
+            top: 0;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            z-index: 9200;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.25) transparent;
+        }
+        .sidebar::-webkit-scrollbar { width: 4px; }
+        .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
+
+        .sidebar-top, .sidebar-bottom {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .nav-item {
+            width: 46px;
+            height: 46px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+            opacity: 0.65;
+            border-radius: 12px;
+            text-decoration: none;
+            margin-bottom: 4px;
+        }
+        .nav-item.active, .nav-item:hover { opacity: 1; background-color: rgba(255,255,255,0.14); }
+        .nav-item img { width: 22px; height: 22px; filter: brightness(0) invert(1); }
+
+        .sidebar-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.14);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        @media screen and (max-height: 700px) {
+            .nav-item { width: 36px; height: 36px; }
+            .nav-item img { width: 17px; height: 17px; }
+            .sidebar-top, .sidebar-bottom { gap: 4px; }
+            .sidebar { padding: 10px 0; }
+        }
+
+        .sidebar-close-btn {
+            display: none;
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: #fff;
+            opacity: 0.75;
+            width: 32px;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .sidebar-close-btn:hover { opacity: 1; background: rgba(255,255,255,0.14); }
+        .sidebar-close-btn svg { width: 18px; height: 18px; }
+
+        .app-topbar {
+            position: fixed;
+            top: 0;
+            left: 76px;
+            right: 0;
+            height: 64px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            z-index: 200;
+        }
+        .topbar-left { display: flex; align-items: center; gap: 16px; }
+        .hamburger-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--green-900);
+            width: 34px;
+            height: 34px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+        .hamburger-btn:hover { background: var(--green-100); }
+        .hamburger-btn img {
+            width: 20px;
+            height: 20px;
+            filter: invert(17%) sepia(35%) saturate(1352%) hue-rotate(115deg) brightness(94%) contrast(92%);
+        }
+        .topbar-titles { display: flex; flex-direction: column; line-height: 1.25; }
+        .topbar-eyebrow {
+            font-size: 0.66rem; font-weight: 700; letter-spacing: 0.14em;
+            text-transform: uppercase; color: var(--muted);
+        }
+        .topbar-title { font-size: 1rem; font-weight: 600; color: var(--green-900); }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: var(--green-700); color: #fff;
+            font-size: 0.75rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .portal-content {
+            position: fixed;
+            top: 64px;
+            left: 76px;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 30px 36px 30px;
+            animation: contentFadeIn .4s ease forwards;
+        }
+        @keyframes contentFadeIn {
+            from { transform: translateY(8px); }
+            to   { transform: translateY(0); }
+        }
+        body.page-exit .portal-content {
+            animation: contentFadeOut .28s ease forwards;
+        }
+        @keyframes contentFadeOut {
+            from { transform: translateY(0) scale(1); }
+            to   { transform: translateY(-6px) scale(0.99); }
+        }
 
         /* ── Page header ── */
         .page-header { margin-bottom:32px; }
@@ -40,12 +245,13 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
 
         /* ── Stats row ── */
         .assign-stats { display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:32px; }
-        .astat { background:#fff;border-radius:12px;padding:20px 24px;border:1px solid #edf2f7;display:flex;align-items:center;gap:16px; }
+        .astat { background:#fff;border-radius:12px;padding:20px 24px;border:1px solid #edf2f7;display:flex;align-items:center;gap:16px;min-width:0; }
         .astat-icon { width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0; }
         .astat-icon.blue   { background:#eff6ff; }
         .astat-icon.green  { background:#f0fdf4; }
         .astat-icon.amber  { background:#fffbeb; }
-        .astat-info span   { font-size:12px;color:#64748b;display:block;margin-bottom:2px; }
+        .astat-info { min-width:0; }
+        .astat-info span   { font-size:12px;color:#64748b;display:block;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
         .astat-info strong { font-size:22px;font-weight:700;color:#1a202c; }
 
         /* ── Assignment card ── */
@@ -55,6 +261,17 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
             transition:box-shadow 0.2s;
         }
         .assign-card:hover { box-shadow:0 4px 20px rgba(0,0,0,0.06); }
+
+        /* Highlighted card (linked from notification) */
+        .assign-card.highlight-card {
+            border-color:#2563eb;
+            box-shadow:0 0 0 3px rgba(37,99,235,0.15);
+            animation: highlightPulse 1.8s ease-in-out 2;
+        }
+        @keyframes highlightPulse {
+            0%, 100% { box-shadow:0 0 0 3px rgba(37,99,235,0.15); }
+            50%      { box-shadow:0 0 0 6px rgba(37,99,235,0.25); }
+        }
 
         /* Card header stripe */
         .assign-card-header {
@@ -66,9 +283,10 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
             border-bottom:1px solid #f1f5f9;
             background:#fafbfc;
         }
+        .assign-card-header > div { min-width:0; }
         .case-num { font-size:13px;font-weight:700;color:#1B4332; }
-        .case-subject { font-size:14px;font-weight:600;color:#1a202c;margin-bottom:2px; }
-        .case-complainant { font-size:12px;color:#64748b; }
+        .case-subject { font-size:14px;font-weight:600;color:#1a202c;margin-bottom:2px;overflow-wrap:anywhere; }
+        .case-complainant { font-size:12px;color:#64748b;overflow-wrap:anywhere; }
         .assign-status-pill { padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700; }
         .assign-status-pill.approved       { background:#d1fae5;color:#065f46; }
         .assign-status-pill.in-process { background:#dbeafe;color:#1e40af; }
@@ -193,14 +411,30 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
         .toast.error { background:#dc2626; }
 
         /* Notification bell (same as dashboard) */
-        .notif-wrapper{position:relative;display:flex;justify-content:center;align-items:center;padding:15px;cursor:pointer;opacity:0.6;transition:opacity 0.2s;}
+        .notif-wrapper{position:relative;cursor:pointer;opacity:0.6;transition:opacity 0.2s;}
         .notif-wrapper:hover{opacity:1;}
-        .notif-badge{position:absolute;top:4px;right:4px;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #004d2c;line-height:1;}
+        .notif-badge{ position: absolute;
+    box-sizing: border-box;
+    top: 4px;
+    right: 4px;
+    background: #e53e3e;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    border: 2px solid #004d2c;
+    line-height: 1;}
         .notif-badge.has-notif{display:flex;}
         .notif-overlay{display:none;position:fixed;inset:0;z-index:9000;}
         .notif-overlay.show{display:block;}
         .notif-dropdown{position:fixed;top:0;left:-420px;width:360px;height:100vh;background:#fff;border-radius:0 16px 16px 0;box-shadow:6px 0 30px rgba(0,0,0,.15);z-index:9999;display:flex;flex-direction:column;transition:left .32s cubic-bezier(0.4,0,0.2,1);overflow:hidden;}
-        .notif-dropdown.open{left:65px;}
+        .notif-dropdown.open{left:76px;}
         .notif-panel-header{background:#004d2c;color:#fff;padding:20px 22px 16px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
         .notif-panel-header h3{font-size:15px;font-weight:600;margin:0 0 3px;}
         .notif-panel-header small{font-size:11px;opacity:.75;display:block;}
@@ -218,23 +452,91 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
         .n-body time{font-size:11px;color:#94a3b8;}
         .n-empty{text-align:center;padding:50px 20px;color:#94a3b8;}
         .n-empty img{width:40px;opacity:.28;display:block;margin:0 auto 10px;}
+
+        /* ===================================
+           RESPONSIVE — placed last so these actually win the cascade
+           =================================== */
+        @media screen and (max-width: 992px) {
+            .sidebar { transform: translateX(-100%); box-shadow: 6px 0 24px rgba(0,0,0,0.18); }
+            .sidebar.open { transform: translateX(0); }
+            .sidebar-close-btn { display: flex; }
+            .hamburger-btn { display: flex; }
+            .app-topbar { left: 0; padding: 0 16px; }
+            .portal-content { left: 0; }
+            .notif-dropdown.open { left: 0 !important; }
+        }
+        @media screen and (max-width: 768px) {
+            .topbar-eyebrow { display: none; }
+            .topbar-title { font-size: 0.95rem; }
+            .portal-content { padding: 20px 16px 24px !important; }
+
+            .page-header h1 { font-size: 19px; }
+            .page-header p { font-size: 13px; }
+
+            .assign-stats { grid-template-columns: 1fr; gap: 12px; }
+            .astat { padding: 14px 16px; gap: 10px; }
+            .astat-icon { width: 38px; height: 38px; font-size: 17px; }
+            .astat-info strong { font-size: 18px; }
+
+            .assign-card-header { grid-template-columns: 1fr; gap: 8px; }
+            .assign-card-body { grid-template-columns: 1fr; }
+            .resident-request { border-right: none; border-bottom: 1px solid #f1f5f9; }
+            .notif-dropdown { width: 100%; max-width: 100vw; }
+        }
+        @media screen and (max-width: 480px) {
+            .page-header h1 { font-size: 18px; }
+        }
     </style>
 </head>
 <body class="admin-dashboard-layout">
 
+    <!-- Top bar -->
+    <header class="app-topbar">
+        <div class="topbar-left">
+            <button class="hamburger-btn" id="hamburgerBtn" aria-label="Open menu">
+                <img src="menu.png" alt="Menu">
+            </button>
+            <div class="topbar-titles">
+                <span class="topbar-eyebrow">Admin Panel</span>
+                <span class="topbar-title">Lupon Assignments</span>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="topbar-avatar" title="<?php echo htmlspecialchars($admin_display_name); ?>">
+                <?php echo htmlspecialchars($admin_initials); ?>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sidebar drawer backdrop (mobile only) -->
+    <div class="res-notif-overlay" id="sidebarDrawerOverlay" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.25);"></div>
+
     <!-- Sidebar -->
-    <nav class="sidebar">
+    <nav class="sidebar" id="sidebarNav">
+        <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
         <div class="sidebar-top">
             <a href="admin-dashboard.php"        class="nav-item" title="Dashboard"><img src="dashboard.png" title="Dashboard"></a>
             <a href="admin-lupon-assignments.php" class="nav-item active"><img src="people.png" title="Lupon Assignments"></a>
-            <a href="admin-committee.php"         class="nav-item" title="Committee"><img src="file.png" title="Committee"></a>
+            <a href="admin-committee.php"         class="nav-item" title="Committee"><img src="committee.png" title="Committee"></a>
+            <a href="admin-calendar.php"            class="nav-item" title="Calendar"><img src="calendar.png"></a>
+            <a href="admin-file-maintenance.php"    class="nav-item" title="File Maintenance"><img src="file.png"></a>
+            <a href="admin-audit-trail.php"          class="nav-item" title="Audit Trail"><img src="audit.png"></a>
             <div class="nav-item notif-wrapper" id="bellBtn">
                 <img src="bell.png" id="bellIcon">
                 <span class="notif-badge" id="notifBadge"></span>
             </div>
+            <a href="#" onclick="openLogoutModal(); return false;" class="nav-item logout-item" title="Logout">
+                <img src="logout.png">
+            </a>
         </div>
         <div class="sidebar-bottom">
-            <a href="logout.php" class="nav-item" title="Logout"><img src="logout.png"></a>
+            <div class="sidebar-avatar" title="<?php echo htmlspecialchars($admin_display_name); ?>">
+                <?php echo htmlspecialchars($admin_initials); ?>
+            </div>
         </div>
     </nav>
 
@@ -305,7 +607,7 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
 
             $status_cls = strtolower(str_replace(' ','-',$c['status']));
         ?>
-        <div class="assign-card" id="card_<?php echo $c['id']; ?>">
+        <div class="assign-card<?php echo ($highlight_id === (int)$c['id']) ? ' highlight-card' : ''; ?>" id="card_<?php echo $c['id']; ?>">
 
             <!-- Card header -->
             <div class="assign-card-header">
@@ -621,6 +923,15 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
         function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         function escJs(s)   { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
+        // ── Scroll to and highlight a specific case (from notification link) ──
+        (function scrollToHighlight() {
+            const el = document.querySelector('.highlight-card');
+            if (el) {
+                setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+            }
+        })();
+
+
         function showToast(msg, isError) {
             const t = document.getElementById('toast');
             t.textContent = msg;
@@ -637,13 +948,59 @@ while ($lm = $lupon_all->fetch_assoc()) $lupon_members[] = $lm;
             if(unread_count>0){badge.textContent=unread_count>99?'99+':unread_count;badge.classList.add('has-notif');}
             else badge.classList.remove('has-notif');
             nLabel.textContent=unread_count>0?`${unread_count} unread`:'All caught up!';
-            nList.innerHTML=notifications.length?notifications.map(n=>`<a class="n-item ${n.is_read==0?'unread':''}" href="admin-view-complaint.php?id=${n.complaint_id}"><div class="n-dot"><img src="file.png"></div><div class="n-body"><strong>${escN(n.subject)}</strong><p>${escN(n.message)}</p><time>${taAgo(n.created_at)}</time></div></a>`).join(''):`<div class="n-empty"><img src="bell.png"><p>No notifications yet.</p></div>`;
+            nList.innerHTML=notifications.length?notifications.map(n=>`<a class="n-item ${n.is_read==0?'unread':''}" href="${n.type === 'id_verification' ? 'admin-review-id.php?resident_id=' + n.resident_id : (n.type === 'new_appointment' || n.type === 'unassigned_warning') ? 'admin-lupon-assignments.php?complaint_id=' + n.complaint_id : 'admin-view-complaint.php?id=' + n.complaint_id}">
+<div class="n-dot"><img src="file.png"></div><div class="n-body"><strong>${escN(n.subject)}</strong><p>${escN(n.message)}</p><time>${taAgo(n.created_at)}</time></div></a>`).join(''):`<div class="n-empty"><img src="bell.png"><p>No notifications yet.</p></div>`;
         }
         function fetchBell(){fetch('get_notifications.php?action=fetch').then(r=>r.json()).then(renderBell).catch(()=>{});}
         bellBtn.addEventListener('click',()=>{if(bellOpen){dropdown.classList.remove('open');overlay.classList.remove('show');bellOpen=false;}else{dropdown.classList.add('open');overlay.classList.add('show');bellOpen=true;}});
         overlay.addEventListener('click',()=>{dropdown.classList.remove('open');overlay.classList.remove('show');bellOpen=false;});
         markBtn.addEventListener('click',()=>fetch('get_notifications.php?action=mark_read').then(r=>r.json()).then(()=>fetchBell()));
-        fetchBell();setInterval(fetchBell,15000);
+        fetchBell();
+fetch('check_upcoming_unassigned.php')
+    .then(r => r.json())
+    .then(d => { if (d.flagged_count > 0) fetchBell(); });
+setInterval(fetchBell,15000);
+
+// ── Sidebar drawer (mobile) ──
+(function() {
+    const sidebar   = document.getElementById('sidebarNav');
+    const hamburger = document.getElementById('hamburgerBtn');
+    const closeBtn  = document.getElementById('sidebarCloseBtn');
+    const drawerOv  = document.getElementById('sidebarDrawerOverlay');
+    let drawerOpen = false;
+
+    function openDrawer()  { sidebar.classList.add('open'); drawerOv.style.display = 'block'; drawerOpen = true; }
+    function closeDrawer() { sidebar.classList.remove('open'); drawerOv.style.display = 'none'; drawerOpen = false; }
+
+    if (hamburger) hamburger.addEventListener('click', () => drawerOpen ? closeDrawer() : openDrawer());
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    drawerOv.addEventListener('click', closeDrawer);
+})();
     </script>
+
+<!-- ── Logout confirmation modal ── -->
+<div id="logoutOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:99999;justify-content:center;align-items:center;padding:20px;backdrop-filter:blur(3px);" onclick="if(event.target===this)closeLogoutModal()">
+    <div style="background:#fff;border-radius:18px;padding:36px 32px 28px;width:100%;max-width:380px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.18);animation:lgIn .22s cubic-bezier(.34,1.2,.64,1);position:relative;">
+        <button onclick="closeLogoutModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;color:#94a3b8;cursor:pointer;">×</button>
+        <div style="width:64px;height:64px;border-radius:50%;background:#fee2e2;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+            <img src="logout.png" style="width:28px;height:28px;filter:invert(29%) sepia(91%) saturate(1500%) hue-rotate(330deg) brightness(90%);">
+        </div>
+        <h2 style="font-family:'Poppins',sans-serif;font-size:18px;font-weight:700;color:#1a202c;margin:0 0 8px;">Log out of your account?</h2>
+        <p style="font-family:'Poppins',sans-serif;font-size:13px;color:#64748b;margin:0 0 28px;line-height:1.6;">You will be returned to the login page.<br>Any unsaved changes will be lost.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <a href="logout.php" style="display:block;background:linear-gradient(135deg,#dc2626,#991b1b);color:#fff;padding:13px;border-radius:10px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(220,38,38,0.28);">Yes, log me out</a>
+            <button onclick="closeLogoutModal()" style="background:#f8fafc;color:#374151;border:1.5px solid #e2e8f0;padding:13px;border-radius:10px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;cursor:pointer;">Cancel, stay logged in</button>
+        </div>
+    </div>
+</div>
+<style>
+@keyframes lgIn { from{transform:translateY(16px) scale(.97);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+</style>
+<script>
+function openLogoutModal()  { const o=document.getElementById('logoutOverlay'); o.style.display='flex'; }
+function closeLogoutModal() { document.getElementById('logoutOverlay').style.display='none'; }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeLogoutModal(); });
+</script>
+
 </body>
 </html>

@@ -2,6 +2,14 @@
 require_once 'session_check_admin.php';
 include 'db.php';
 
+// Avatar initials from the admin's name
+$admin_display_name = $session_admin_name ?? 'Admin';
+$admin_name_parts = preg_split('/\s+/', trim($admin_display_name));
+$admin_initials = strtoupper(substr($admin_name_parts[0], 0, 1) . substr($admin_name_parts[count($admin_name_parts) - 1] ?? '', 0, 1));
+if (count($admin_name_parts) < 2) {
+    $admin_initials = strtoupper(substr($admin_name_parts[0], 0, 2));
+}
+
 // Load current settings
 $window_row = $conn->query("SELECT setting_value FROM schedule_settings WHERE setting_key='booking_window_days'")->fetch_assoc();
 $booking_window = $window_row ? (int)$window_row['setting_value'] : 7;
@@ -14,17 +22,244 @@ while ($h = $holidays_res->fetch_assoc()) $holidays[] = $h;
 // Group holidays by year-month for calendar rendering
 $holiday_map = [];
 foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
+
+// ── Load all scheduled hearings (from appointments + complaints) ──
+// Group by date, listing complainant/respondent and assigned lupon members
+$hearings_res = $conn->query("
+    SELECT a.appointment_date, a.appointment_time,
+           c.id AS complaint_id, c.subject, c.complainant_name, c.respondent_name,
+           lm.name AS lupon_name
+    FROM appointments a
+    INNER JOIN complaints c ON c.id = a.complaint_id
+    LEFT JOIN lupon_members lm ON lm.id = a.lupon_member_id
+    WHERE c.status NOT IN ('Completed','Rejected','Cannot Be Handled')
+    ORDER BY a.appointment_date ASC, a.appointment_time ASC
+");
+
+$hearing_map = []; // date => [ complaint_id => {time, subject, complainant, respondent, lupon: []} ]
+while ($hr = $hearings_res->fetch_assoc()) {
+    $date = $hr['appointment_date'];
+    $cid  = $hr['complaint_id'];
+    if (!isset($hearing_map[$date])) $hearing_map[$date] = [];
+    if (!isset($hearing_map[$date][$cid])) {
+        $hearing_map[$date][$cid] = [
+            'complaint_id' => $cid,
+            'time'         => $hr['appointment_time'],
+            'subject'      => $hr['subject'],
+            'complainant'  => $hr['complainant_name'],
+            'respondent'   => $hr['respondent_name'],
+            'lupon'        => [],
+        ];
+    }
+    if (!empty($hr['lupon_name'])) {
+        $hearing_map[$date][$cid]['lupon'][] = $hr['lupon_name'];
+    }
+}
+// Re-index each date's hearings as a plain array
+foreach ($hearing_map as $date => $cases) {
+    $hearing_map[$date] = array_values($cases);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calendar Management - Barangay San Roque</title>
-    <link rel="stylesheet" href="portal-style.css">
     <link rel="stylesheet" href="admin-style.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background:#f8fafc; }
+        :root {
+            --green-900: #1B4332;
+            --green-700: #2D6A4F;
+            --green-500: #40916c;
+            --green-100: #e8f5e9;
+            --border: #e0ede5;
+            --muted: #52796f;
+        }
+
+        /* =============================================
+           TOP BAR + SIDEBAR RAIL — matches admin-dashboard.php
+           ============================================= */
+
+        * { font-family: 'Poppins', sans-serif; }
+
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        body {
+            background:#f8fafc;
+            opacity: 0;
+            animation: pageFadeIn .4s ease forwards;
+        }
+        @keyframes pageFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        body.page-exit {
+            animation: pageFadeOut .28s ease forwards;
+        }
+        @keyframes pageFadeOut {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+
+        .sidebar {
+            width: 76px;
+            height: 100vh;
+            background: #004d2c;
+            position: fixed;
+            top: 0;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            z-index: 9200;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.25) transparent;
+        }
+        .sidebar::-webkit-scrollbar { width: 4px; }
+        .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
+
+        .sidebar-top, .sidebar-bottom {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .nav-item {
+            width: 46px;
+            height: 46px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+            opacity: 0.65;
+            border-radius: 12px;
+            text-decoration: none;
+            margin-bottom: 4px;
+        }
+        .nav-item.active, .nav-item:hover { opacity: 1; background-color: rgba(255,255,255,0.14); }
+        .nav-item img { width: 22px; height: 22px; filter: brightness(0) invert(1); }
+
+        .sidebar-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.14);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        @media screen and (max-height: 700px) {
+            .nav-item { width: 36px; height: 36px; }
+            .nav-item img { width: 17px; height: 17px; }
+            .sidebar-top, .sidebar-bottom { gap: 4px; }
+            .sidebar { padding: 10px 0; }
+        }
+
+        .sidebar-close-btn {
+            display: none;
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: #fff;
+            opacity: 0.75;
+            width: 32px;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .sidebar-close-btn:hover { opacity: 1; background: rgba(255,255,255,0.14); }
+        .sidebar-close-btn svg { width: 18px; height: 18px; }
+
+        .app-topbar {
+            position: fixed;
+            top: 0;
+            left: 76px;
+            right: 0;
+            height: 64px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            z-index: 200;
+        }
+        .topbar-left { display: flex; align-items: center; gap: 16px; }
+        .hamburger-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--green-900);
+            width: 34px;
+            height: 34px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+        .hamburger-btn:hover { background: var(--green-100); }
+        .hamburger-btn img {
+            width: 20px;
+            height: 20px;
+            filter: invert(17%) sepia(35%) saturate(1352%) hue-rotate(115deg) brightness(94%) contrast(92%);
+        }
+        .topbar-titles { display: flex; flex-direction: column; line-height: 1.25; }
+        .topbar-eyebrow {
+            font-size: 0.66rem; font-weight: 700; letter-spacing: 0.14em;
+            text-transform: uppercase; color: var(--muted);
+        }
+        .topbar-title { font-size: 1rem; font-weight: 600; color: var(--green-900); }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: var(--green-700); color: #fff;
+            font-size: 0.75rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .portal-content {
+            position: fixed;
+            top: 64px;
+            left: 76px;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 30px 36px 30px;
+            animation: contentFadeIn .4s ease forwards;
+        }
+        @keyframes contentFadeIn {
+            from { transform: translateY(8px); }
+            to   { transform: translateY(0); }
+        }
+        body.page-exit .portal-content {
+            animation: contentFadeOut .28s ease forwards;
+        }
+        @keyframes contentFadeOut {
+            from { transform: translateY(0) scale(1); }
+            to   { transform: translateY(-6px) scale(0.99); }
+        }
 
         /* ── Page layout ── */
         .cal-layout {
@@ -81,7 +316,7 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             font-size:13px;font-weight:500;color:#374151;
             cursor:pointer;transition:all .15s;position:relative;
             border:2px solid transparent;
-            padding:2px;
+            padding:2px;overflow:hidden;
         }
         .cal-day:hover:not(.empty):not(.past) {
             background:#eff6ff;border-color:#93c5fd;
@@ -110,6 +345,67 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             width:5px;height:5px;border-radius:50%;
             background:#e53e3e;margin-top:2px;flex-shrink:0;
         }
+
+        /* Hearing dot indicator */
+        .cal-day .hearing-dot {
+            width:5px;height:5px;border-radius:50%;
+            background:#2563eb;margin-top:2px;flex-shrink:0;
+        }
+        .cal-day .dot-row { display:flex;gap:3px;margin-top:2px; }
+        .cal-day .hearing-count-label {
+            font-size:8.5px;font-weight:700;color:#1e40af;
+            line-height:1;margin-top:1px;letter-spacing:.01em;
+            white-space:nowrap;
+        }
+        .cal-day.has-hearing:not(.holiday) {
+            background:#eff6ff;border-color:#bfdbfe;
+        }
+        .cal-day.has-hearing:hover:not(.past) {
+            background:#dbeafe;border-color:#60a5fa;
+        }
+
+        /* ── Hearing details modal ── */
+        .hearing-modal-bg {
+            display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+            z-index:99999;justify-content:center;align-items:center;
+            padding:20px;box-sizing:border-box;overflow-y:auto;
+        }
+        .hearing-modal-bg.open { display:flex; }
+        .hearing-modal-box {
+            background:#fff;border-radius:16px;padding:26px;
+            width:100%;max-width:480px;max-height:85vh;overflow-y:auto;
+            position:relative;animation:hmIn .2s ease;
+        }
+        @keyframes hmIn { from{transform:translateY(14px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .hearing-modal-box h2 { font-size:17px;color:#1a202c;margin:0 0 4px; }
+        .hearing-modal-box .hmsub { font-size:13px;color:#64748b;margin:0 0 18px; }
+        .hearing-modal-close {
+            position:absolute;top:14px;right:16px;background:none;border:none;
+            font-size:22px;cursor:pointer;color:#94a3b8;line-height:1;
+        }
+        .hearing-case-card {
+            border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;
+            margin-bottom:12px;
+        }
+        .hearing-case-card:last-child { margin-bottom:0; }
+        .hearing-time-badge {
+            display:inline-block;background:#eff6ff;color:#1e40af;
+            font-size:11px;font-weight:700;padding:3px 10px;
+            border-radius:99px;margin-bottom:8px;
+        }
+        .hearing-subject { font-size:14px;font-weight:600;color:#1a202c;margin-bottom:8px; }
+        .hearing-row { display:flex;gap:8px;font-size:12px;color:#64748b;margin-bottom:4px; }
+        .hearing-row strong { color:#374151;min-width:90px;display:inline-block; }
+        .hearing-lupon-list { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }
+        .hearing-lupon-pill {
+            font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;
+            background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;
+        }
+        .hearing-view-link {
+            display:inline-block;margin-top:8px;font-size:12px;font-weight:700;
+            color:#1B4332;text-decoration:underline;
+        }
+        .no-hearings { text-align:center;padding:24px;color:#94a3b8;font-size:13px;font-style:italic; }
 
         /* Day number */
         .cal-day .day-num { line-height:1; }
@@ -221,14 +517,14 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
         .toast.show{transform:translateY(0);opacity:1;}
 
         /* Notification bell */
-        .notif-wrapper{position:relative;display:flex;justify-content:center;align-items:center;padding:15px;cursor:pointer;opacity:0.6;transition:opacity 0.2s;}
+        .notif-wrapper{position:relative;cursor:pointer;opacity:0.6;transition:opacity 0.2s;}
         .notif-wrapper:hover{opacity:1;}
-        .notif-badge{position:absolute;top:4px;right:4px;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #004d2c;line-height:1;}
+        .notif-badge{box-sizing:border-box;position:absolute;top:4px;right:4px;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #004d2c;line-height:1;}
         .notif-badge.has-notif{display:flex;}
         .notif-overlay{display:none;position:fixed;inset:0;z-index:9000;}
         .notif-overlay.show{display:block;}
         .notif-dropdown{position:fixed;top:0;left:-420px;width:360px;height:100vh;background:#fff;border-radius:0 16px 16px 0;box-shadow:6px 0 30px rgba(0,0,0,.15);z-index:9999;display:flex;flex-direction:column;transition:left .32s cubic-bezier(0.4,0,0.2,1);overflow:hidden;}
-        .notif-dropdown.open{left:65px;}
+        .notif-dropdown.open{left:76px;}
         .notif-panel-header{background:#004d2c;color:#fff;padding:20px 22px 16px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
         .notif-panel-header h3{font-size:15px;font-weight:600;margin:0 0 3px;}
         .notif-panel-header small{font-size:11px;opacity:.75;display:block;}
@@ -246,26 +542,82 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
         .n-body time{font-size:11px;color:#94a3b8;}
         .n-empty{text-align:center;padding:50px 20px;color:#94a3b8;}
         .n-empty img{width:40px;opacity:.28;display:block;margin:0 auto 10px;}
+
+        /* ===================================
+           RESPONSIVE — placed last so these actually win the cascade
+           =================================== */
+        @media screen and (max-width: 992px) {
+            .sidebar { transform: translateX(-100%); box-shadow: 6px 0 24px rgba(0,0,0,0.18); }
+            .sidebar.open { transform: translateX(0); }
+            .sidebar-close-btn { display: flex; }
+            .hamburger-btn { display: flex; }
+            .app-topbar { left: 0; padding: 0 16px; }
+            .portal-content { left: 0; }
+            .notif-dropdown.open { left: 0 !important; }
+            .cal-layout { grid-template-columns: 1fr; }
+        }
+        @media screen and (max-width: 768px) {
+            .topbar-eyebrow { display: none; }
+            .topbar-title { font-size: 0.95rem; }
+            .portal-content { padding: 20px 16px 24px !important; }
+            .page-header h1 { font-size: 19px; }
+            .page-header p { font-size: 13px; }
+            .notif-dropdown { width: 100%; max-width: 100vw; }
+        }
+        @media screen and (max-width: 480px) {
+            .page-header h1 { font-size: 18px; }
+        }
     </style>
 </head>
 <body class="admin-dashboard-layout">
 
+    <!-- Top bar -->
+    <header class="app-topbar">
+        <div class="topbar-left">
+            <button class="hamburger-btn" id="hamburgerBtn" aria-label="Open menu">
+                <img src="menu.png" alt="Menu">
+            </button>
+            <div class="topbar-titles">
+                <span class="topbar-eyebrow">Admin Panel</span>
+                <span class="topbar-title">Calendar</span>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="topbar-avatar" title="<?php echo htmlspecialchars($admin_display_name); ?>">
+                <?php echo htmlspecialchars($admin_initials); ?>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sidebar drawer backdrop (mobile only) -->
+    <div class="res-notif-overlay" id="sidebarDrawerOverlay" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.25);"></div>
+
     <!-- Sidebar -->
-    <nav class="sidebar">
+    <nav class="sidebar" id="sidebarNav">
+        <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
         <div class="sidebar-top">
             <a href="admin-dashboard.php"          class="nav-item" title="Dashboard"><img src="dashboard.png"></a>
             <a href="admin-lupon-assignments.php"   class="nav-item" title="Lupon Assignments"><img src="people.png"></a>
-            <a href="admin-committee.php"           class="nav-item" title="Committee"><img src="file.png"></a>
-            <a href="admin-calendar.php"            class="nav-item active" title="Calendar"><img src="clock.png"></a>
-            <a href="admin-file-maintenance.php"    class="nav-item" title="File Maintenance"><img src="dashboard.png"></a>
-            <a href="admin-audit-trail.php"         class="nav-item" title="Audit Trail"><img src="file.png"></a>
+            <a href="admin-committee.php"           class="nav-item" title="Committee"><img src="committee.png"></a>
+            <a href="admin-calendar.php"            class="nav-item active" title="Calendar"><img src="calendar.png"></a>
+            <a href="admin-file-maintenance.php"    class="nav-item" title="File Maintenance"><img src="file.png"></a>
+            <a href="admin-audit-trail.php"         class="nav-item" title="Audit Trail"><img src="audit.png"></a>
             <div class="nav-item notif-wrapper" id="bellBtn">
                 <img src="bell.png" id="bellIcon">
                 <span class="notif-badge" id="notifBadge"></span>
             </div>
+            <a href="#" onclick="openLogoutModal(); return false;" class="nav-item logout-item" title="Logout">
+                <img src="logout.png">
+            </a>
         </div>
         <div class="sidebar-bottom">
-            <a href="logout.php" class="nav-item" title="Logout"><img src="logout.png"></a>
+            <div class="sidebar-avatar" title="<?php echo htmlspecialchars($admin_display_name); ?>">
+                <?php echo htmlspecialchars($admin_initials); ?>
+            </div>
         </div>
     </nav>
 
@@ -282,6 +634,17 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <!-- ── Hearing Details Modal ── -->
+    <div class="hearing-modal-bg" id="hearingModal">
+        <div class="hearing-modal-box">
+            <button class="hearing-modal-close" onclick="closeHearingModal()">×</button>
+            <h2 id="hmTitle">Scheduled Hearings</h2>
+            <p class="hmsub" id="hmSub"></p>
+            <div id="hmList"></div>
+        </div>
+    </div>
+
 
     <main class="portal-content">
 
@@ -309,6 +672,7 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                         <div class="legend-item"><div class="legend-dot today"></div> Today</div>
                         <div class="legend-item"><div class="legend-dot window"></div> Booking window</div>
                         <div class="legend-item"><div class="legend-dot holiday"></div> Holiday / blocked</div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#eff6ff;border:1px solid #bfdbfe;"></div> Has hearing(s)</div>
                     </div>
                 </div>
             </div>
@@ -326,7 +690,8 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                     </div>
                     <input type="range" id="windowSlider" min="1" max="60" step="1"
                            value="<?php echo $booking_window; ?>"
-                           oninput="onWindowSlide(this.value)">
+                           oninput="onWindowSlide(this.value)"
+                           onchange="saveWindow()">
                     <div class="preset-btns" id="presetBtns">
                         <button class="preset-btn" onclick="setPreset(3)">3 days</button>
                         <button class="preset-btn" onclick="setPreset(7)">1 week</button>
@@ -344,12 +709,7 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                         <input type="date" id="hDate" class="add-h-input"
                                min="<?php echo date('Y-m-d'); ?>">
                     </div>
-                    <div class="add-h-field">
-                        <label>Label / Reason</label>
-                        <input type="text" id="hLabel" class="add-h-input"
-                               placeholder="e.g., Christmas Day, Barangay Fiesta, No Hearing">
-                    </div>
-                    <button class="btn-add-holiday" onclick="addHoliday()">Block This Date</button>
+                    <button class="btn-add-holiday" onclick="addHoliday()">Block Date</button>
                 </div>
 
                 <!-- Holiday list -->
@@ -374,8 +734,12 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
 
     <script>
         // ── State ──────────────────────────────────────────────────────────────
-        let currentYear  = new Date().getFullYear();
-        let currentMonth = new Date().getMonth(); // 0-indexed
+        // Restore the previously-viewed month from the URL if present, so a
+        // page reload (or someone bookmarking/sharing the link) doesn't dump
+        // the admin back to the current month.
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentYear  = urlParams.has('y') ? parseInt(urlParams.get('y')) : new Date().getFullYear();
+        let currentMonth = urlParams.has('m') ? parseInt(urlParams.get('m')) : new Date().getMonth(); // 0-indexed
         let bookingWindow = <?php echo $booking_window; ?>;
 
         // Holidays keyed by YYYY-MM-DD
@@ -383,6 +747,9 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
         <?php foreach ($holidays as $h): ?>
         holidayMap['<?php echo $h['holiday_date']; ?>'] = { id: <?php echo $h['id']; ?>, label: '<?php echo addslashes($h['label']); ?>' };
         <?php endforeach; ?>
+
+        // Hearings keyed by YYYY-MM-DD -> array of cases
+        const hearingMap = <?php echo json_encode($hearing_map, JSON_HEX_TAG); ?>;
 
         const today = new Date();
         today.setHours(0,0,0,0);
@@ -423,29 +790,60 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                 const isPast    = dateObj < today;
                 const isHoliday = !!holidayMap[dateStr];
                 const inWindow  = !isPast && dateObj <= maxDate && !isToday;
+                const hasHearing = !!(hearingMap[dateStr] && hearingMap[dateStr].length > 0);
 
                 if (isPast && !isToday) el.classList.add('past');
                 if (isToday)   el.classList.add('today');
                 if (isHoliday) el.classList.add('holiday');
                 if (inWindow && !isHoliday)  el.classList.add('in-window');
+                if (hasHearing) el.classList.add('has-hearing');
 
                 const numSpan = document.createElement('span');
                 numSpan.className   = 'day-num';
                 numSpan.textContent = d;
                 el.appendChild(numSpan);
 
-                if (isHoliday) {
-                    const dot = document.createElement('div');
-                    dot.className = 'h-dot';
-                    el.appendChild(dot);
-                    el.title = holidayMap[dateStr].label;
+                // Dot row (holiday + hearing indicators)
+                if (isHoliday || hasHearing) {
+                    const dotRow = document.createElement('div');
+                    dotRow.className = 'dot-row';
+                    if (isHoliday) {
+                        const dot = document.createElement('div');
+                        dot.className = 'h-dot';
+                        dotRow.appendChild(dot);
+                    }
+                    if (hasHearing) {
+                        const dot = document.createElement('div');
+                        dot.className = 'hearing-dot';
+                        dotRow.appendChild(dot);
+                    }
+                    el.appendChild(dotRow);
                 }
 
-                // Click: toggle holiday (only future dates)
-                if (!isPast || isToday) {
+                // Tiny case-count label
+                if (hasHearing) {
+                    const countLabel = document.createElement('span');
+                    countLabel.className = 'hearing-count-label';
+                    const n = hearingMap[dateStr].length;
+                    countLabel.textContent = n === 1 ? '1 case' : `${n} cases`;
+                    el.appendChild(countLabel);
+                }
+
+                if (isHoliday) {
+                    el.title = holidayMap[dateStr].label + (hasHearing ? ` · ${hearingMap[dateStr].length} hearing(s)` : '');
+                } else if (hasHearing) {
+                    el.title = `${hearingMap[dateStr].length} hearing(s) scheduled`;
+                }
+
+                // Click: show hearing details if any, otherwise toggle holiday (future dates only)
+                if (hasHearing) {
+                    el.style.cursor = 'pointer';
+                    el.addEventListener('click', () => openHearingModal(dateStr, dateObj));
+                } else if (!isPast || isToday) {
                     el.addEventListener('click', () => clickDay(dateStr, dateObj, el));
                     if (!isPast && !isToday) el.style.cursor = 'pointer';
                 }
+
 
                 grid.appendChild(el);
             }
@@ -457,7 +855,15 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             currentMonth += dir;
             if (currentMonth > 11) { currentMonth = 0;  currentYear++; }
             if (currentMonth < 0)  { currentMonth = 11; currentYear--; }
+            syncMonthToUrl();
             renderCalendar();
+        }
+
+        function syncMonthToUrl() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('y', currentYear);
+            params.set('m', currentMonth);
+            history.replaceState(null, '', '?' + params.toString());
         }
 
         function formatDate(d) {
@@ -467,7 +873,54 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             return `${y}-${m}-${day}`;
         }
 
-        // ── Click a day to quickly add/remove as holiday ───────────────────────
+        // ── Hearing details modal ───────────────────────────────────────────────
+        function escH(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+        function openHearingModal(dateStr, dateObj) {
+            const cases = hearingMap[dateStr] || [];
+            const title = document.getElementById('hmTitle');
+            const sub   = document.getElementById('hmSub');
+            const list  = document.getElementById('hmList');
+
+            const dateLabel = dateObj.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+            title.textContent = '📅 ' + dateLabel;
+            sub.textContent = cases.length === 1 ? '1 hearing scheduled' : `${cases.length} hearings scheduled`;
+
+            if (cases.length === 0) {
+                list.innerHTML = '<div class="no-hearings">No hearings scheduled on this date.</div>';
+            } else {
+                list.innerHTML = cases.map(c => `
+                    <div class="hearing-case-card">
+                        <span class="hearing-time-badge">🕐 ${escH(c.time)}</span>
+                        <div class="hearing-subject">${escH(c.subject)}</div>
+                        <div class="hearing-row"><strong>Complainant</strong> ${escH(c.complainant)}</div>
+                        <div class="hearing-row"><strong>Respondent</strong> ${escH(c.respondent)}</div>
+                        ${c.lupon.length ? `
+                        <div class="hearing-row" style="align-items:flex-start;">
+                            <strong>Lupon Panel</strong>
+                            <div class="hearing-lupon-list">
+                                ${c.lupon.map(n => `<span class="hearing-lupon-pill">👤 ${escH(n)}</span>`).join('')}
+                            </div>
+                        </div>` : `
+                        <div class="hearing-row"><strong>Lupon Panel</strong> <em style="color:#94a3b8;">Not yet assigned</em></div>
+                        `}
+                        <a class="hearing-view-link" href="admin-view-complaint.php?id=${c.complaint_id}">View Case →</a>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('hearingModal').classList.add('open');
+        }
+
+        function closeHearingModal() {
+            document.getElementById('hearingModal').classList.remove('open');
+        }
+
+        document.getElementById('hearingModal').addEventListener('click', e => {
+            if (e.target.id === 'hearingModal') closeHearingModal();
+        });
+
+
         function clickDay(dateStr, dateObj, el) {
             if (dateObj < today) return;
 
@@ -475,10 +928,11 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                 // Already a holiday — delete it
                 deleteHoliday(holidayMap[dateStr].id, dateStr);
             } else {
-                // Pre-fill the add holiday form
-                document.getElementById('hDate').value  = dateStr;
-                document.getElementById('hLabel').focus();
-                showToast('Date pre-filled. Add a label and click "Block This Date".', '#1B4332');
+                // Block it immediately — no label required, no side panel needed
+                const dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+                if (confirm(`Block ${dateLabel}? Residents won't be able to book this date.`)) {
+                    blockDate(dateStr, '');
+                }
             }
         }
 
@@ -498,6 +952,7 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             bookingWindow = days;
             document.getElementById('windowSlider').value = days;
             onWindowSlide(days);
+            saveWindow();
         }
 
         function updatePresetHighlight() {
@@ -527,15 +982,12 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
         }
 
         // ── Holidays ───────────────────────────────────────────────────────────
-        function addHoliday() {
-            const date  = document.getElementById('hDate').value;
-            const label = document.getElementById('hLabel').value.trim();
-            if (!date)  { showToast('Please select a date.', '#b45309'); return; }
-            if (!label) { showToast('Please enter a label.', '#b45309'); return; }
+        function blockDate(dateStr, label) {
+            label = (label || '').trim() || 'Blocked';
 
             const fd = new FormData();
             fd.append('action', 'add_holiday');
-            fd.append('date',   date);
+            fd.append('date',   dateStr);
             fd.append('label',  label);
 
             fetch('save_calendar.php', { method:'POST', body:fd })
@@ -543,15 +995,49 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
                 .then(d => {
                     if (d.success) {
                         showToast('Date blocked successfully!');
-                        document.getElementById('hDate').value  = '';
-                        document.getElementById('hLabel').value = '';
-                        // Reload to refresh calendar + list
-                        location.reload();
+
+                        if (d.id) {
+                            // Update in place — no reload, so the currently
+                            // viewed month and any unsaved UI state survive.
+                            holidayMap[dateStr] = { id: d.id, label: label };
+
+                            const list = document.getElementById('holidayList');
+                            const empty = list.querySelector('.no-holidays');
+                            if (empty) empty.remove();
+
+                            const item = document.createElement('div');
+                            item.className = 'holiday-item';
+                            item.id = 'hitem_' + d.id;
+                            const dateLabel = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            item.innerHTML = `<span class="h-date-badge">${dateLabel}</span><span class="h-label-text">${label.replace(/</g,'&lt;')}</span>`;
+                            const removeBtn = document.createElement('button');
+                            removeBtn.className = 'btn-del-holiday';
+                            removeBtn.title = 'Remove';
+                            removeBtn.textContent = '×';
+                            removeBtn.onclick = () => deleteHoliday(d.id, dateStr);
+                            item.appendChild(removeBtn);
+                            list.prepend(item);
+
+                            renderCalendar();
+                        } else {
+                            // Server didn't return the new id for some reason —
+                            // fall back to a reload. The month is still safe
+                            // since it's now tracked in the URL.
+                            location.reload();
+                        }
                     } else {
                         showToast(d.error || 'Failed to block date.', '#dc2626');
                     }
                 })
                 .catch(() => showToast('Network error.', '#dc2626'));
+        }
+
+        function addHoliday() {
+            const date = document.getElementById('hDate').value;
+            if (!date) { showToast('Please select a date.', '#b45309'); return; }
+
+            blockDate(date, '');
+            document.getElementById('hDate').value = '';
         }
 
         function deleteHoliday(id, dateStr) {
@@ -599,17 +1085,63 @@ foreach ($holidays as $h) $holiday_map[$h['holiday_date']] = $h;
             if(unread_count>0){badge.textContent=unread_count>99?'99+':unread_count;badge.classList.add('has-notif');}
             else badge.classList.remove('has-notif');
             nLabel.textContent=unread_count>0?`${unread_count} unread`:'All caught up!';
-            nList.innerHTML=notifications.length?notifications.map(n=>`<a class="n-item ${n.is_read==0?'unread':''}" href="admin-view-complaint.php?id=${n.complaint_id}"><div class="n-dot"><img src="file.png"></div><div class="n-body"><strong>${escN(n.subject)}</strong><p>${escN(n.message)}</p><time>${taAgo(n.created_at)}</time></div></a>`).join(''):`<div class="n-empty"><img src="bell.png"><p>No notifications.</p></div>`;
+            nList.innerHTML=notifications.length?notifications.map(n=>`<a class="n-item ${n.is_read==0?'unread':''}" href="${n.type === 'id_verification' ? 'admin-review-id.php?resident_id=' + n.resident_id : (n.type === 'new_appointment' || n.type === 'unassigned_warning') ? 'admin-lupon-assignments.php?complaint_id=' + n.complaint_id : 'admin-view-complaint.php?id=' + n.complaint_id}">
+<div class="n-dot"><img src="file.png"></div><div class="n-body"><strong>${escN(n.subject)}</strong><p>${escN(n.message)}</p><time>${taAgo(n.created_at)}</time></div></a>`).join(''):`<div class="n-empty"><img src="bell.png"><p>No notifications.</p></div>`;
         }
         function fetchBell(){fetch('get_notifications.php?action=fetch').then(r=>r.json()).then(renderBell).catch(()=>{});}
         bellBtn.addEventListener('click',()=>{if(bellOpen){dropdown.classList.remove('open');overlay.classList.remove('show');bellOpen=false;}else{dropdown.classList.add('open');overlay.classList.add('show');bellOpen=true;}});
         overlay.addEventListener('click',()=>{dropdown.classList.remove('open');overlay.classList.remove('show');bellOpen=false;});
         markBtn.addEventListener('click',()=>fetch('get_notifications.php?action=mark_read').then(r=>r.json()).then(()=>fetchBell()));
-        fetchBell();setInterval(fetchBell,15000);
+        fetchBell();
+fetch('check_upcoming_unassigned.php')
+    .then(r => r.json())
+    .then(d => { if (d.flagged_count > 0) fetchBell(); });
+setInterval(fetchBell,15000);
+
+// ── Sidebar drawer (mobile) ──
+(function() {
+    const sidebar   = document.getElementById('sidebarNav');
+    const hamburger = document.getElementById('hamburgerBtn');
+    const closeBtn  = document.getElementById('sidebarCloseBtn');
+    const drawerOv  = document.getElementById('sidebarDrawerOverlay');
+    let drawerOpen = false;
+
+    function openDrawer()  { sidebar.classList.add('open'); drawerOv.style.display = 'block'; drawerOpen = true; }
+    function closeDrawer() { sidebar.classList.remove('open'); drawerOv.style.display = 'none'; drawerOpen = false; }
+
+    if (hamburger) hamburger.addEventListener('click', () => drawerOpen ? closeDrawer() : openDrawer());
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    drawerOv.addEventListener('click', closeDrawer);
+})();
 
         // ── Init ───────────────────────────────────────────────────────────────
         onWindowSlide(bookingWindow);
         renderCalendar();
     </script>
+
+<!-- ── Logout confirmation modal ── -->
+<div id="logoutOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:99999;justify-content:center;align-items:center;padding:20px;backdrop-filter:blur(3px);" onclick="if(event.target===this)closeLogoutModal()">
+    <div style="background:#fff;border-radius:18px;padding:36px 32px 28px;width:100%;max-width:380px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.18);animation:lgIn .22s cubic-bezier(.34,1.2,.64,1);position:relative;">
+        <button onclick="closeLogoutModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;color:#94a3b8;cursor:pointer;">×</button>
+        <div style="width:64px;height:64px;border-radius:50%;background:#fee2e2;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+            <img src="logout.png" style="width:28px;height:28px;filter:invert(29%) sepia(91%) saturate(1500%) hue-rotate(330deg) brightness(90%);">
+        </div>
+        <h2 style="font-family:'Poppins',sans-serif;font-size:18px;font-weight:700;color:#1a202c;margin:0 0 8px;">Log out of your account?</h2>
+        <p style="font-family:'Poppins',sans-serif;font-size:13px;color:#64748b;margin:0 0 28px;line-height:1.6;">You will be returned to the login page.<br>Any unsaved changes will be lost.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <a href="logout.php" style="display:block;background:linear-gradient(135deg,#dc2626,#991b1b);color:#fff;padding:13px;border-radius:10px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(220,38,38,0.28);">Yes, log me out</a>
+            <button onclick="closeLogoutModal()" style="background:#f8fafc;color:#374151;border:1.5px solid #e2e8f0;padding:13px;border-radius:10px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;cursor:pointer;">Cancel, stay logged in</button>
+        </div>
+    </div>
+</div>
+<style>
+@keyframes lgIn { from{transform:translateY(16px) scale(.97);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+</style>
+<script>
+function openLogoutModal()  { const o=document.getElementById('logoutOverlay'); o.style.display='flex'; }
+function closeLogoutModal() { document.getElementById('logoutOverlay').style.display='none'; }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeLogoutModal(); });
+</script>
+
 </body>
 </html>

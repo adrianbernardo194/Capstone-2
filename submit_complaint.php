@@ -49,6 +49,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($conn->query($sql) === TRUE) {
         $new_id = $conn->insert_id;
 
+// Fire-and-forget — does not slow down the form submission
+$ai_url = 'http://localhost/thesis/ai_categorize.php';
+$ai_ch  = curl_init($ai_url);
+curl_setopt_array($ai_ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => ['complaint_id' => $new_id],
+    CURLOPT_RETURNTRANSFER => false,
+    CURLOPT_TIMEOUT        => 30, // give it 30 seconds
+    CURLOPT_NOSIGNAL       => 1,
+]);
+curl_exec($ai_ch);
+curl_close($ai_ch);
+
         // Admin notification
         $notif_msg = mysqli_real_escape_string($conn,
             "A new complaint has been filed regarding \"$subject\" by $c_name.");

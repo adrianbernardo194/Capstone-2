@@ -61,5 +61,18 @@ foreach ($lupon_ids as $lid) {
     }
 }
 
+// ── Notify admin about new appointment ──
+$comp_info = $conn->query("SELECT complainant_name, subject FROM complaints WHERE id=$complaint_id")->fetch_assoc();
+$c_name    = mysqli_real_escape_string($conn, $comp_info['complainant_name']);
+$subject   = mysqli_real_escape_string($conn, $comp_info['subject']);
+$notif_msg = mysqli_real_escape_string($conn,
+    "{$comp_info['complainant_name']} has scheduled an appointment on $date at $time regarding \"{$comp_info['subject']}\"."
+);
+
+$conn->query(
+    "INSERT INTO notifications (complaint_id, complainant_name, subject, message, type, is_read)
+     VALUES ($complaint_id, '$c_name', '$subject', '$notif_msg', 'new_appointment', 0)"
+);
+
 echo json_encode(['success' => true]);
 ?>

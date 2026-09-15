@@ -1,7 +1,6 @@
 <?php
 require_once 'session_check_resident.php';
-$conn = new mysqli("localhost","root","","barangay_db");
-if ($conn->connect_error) die("Connection failed.");
+include 'db.php';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $result = $conn->query("SELECT * FROM complaints WHERE id=$id AND resident_id=$session_resident_id");
@@ -17,6 +16,13 @@ $notif_q      = $conn->query("SELECT * FROM resident_notifications WHERE complai
 $latest_notif = $notif_q->num_rows > 0 ? $notif_q->fetch_assoc() : null;
 $status       = $row['status'];
 $sc           = strtolower(str_replace([' ','_'], '-', $status));
+
+// Avatar initials from the resident's name
+$name_parts = preg_split('/\s+/', trim($session_resident_name ?? 'Resident'));
+$initials = strtoupper(substr($name_parts[0], 0, 1) . substr($name_parts[count($name_parts) - 1] ?? '', 0, 1));
+if (count($name_parts) < 2) {
+    $initials = strtoupper(substr($name_parts[0], 0, 2));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -24,10 +30,136 @@ $sc           = strtolower(str_replace([' ','_'], '-', $status));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>View Complaint - Barangay San Roque</title>
-    <link rel="stylesheet" href="portal-style.css">
-    <link rel="stylesheet" href="form-style.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --green-900: #1B4332;
+            --green-700: #2D6A4F;
+            --green-500: #40916c;
+            --green-100: #e8f5e9;
+            --border: #e0ede5;
+            --muted: #52796f;
+            --paper: #f9fbf9;
+        }
+
+        * { box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+        html, body { margin: 0; padding: 0; }
+        body { background: var(--paper); display: flex; min-height: 100vh; }
+
+        /* =============================================
+           TOP BAR + SIDEBAR RAIL — matches resident-portal.php
+           ============================================= */
+
+        .sidebar {
+            width: 76px; height: 100vh; background: #004d2c; position: fixed; top: 0; left: 0;
+            display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+            padding: 20px 0; z-index: 9200; transform: translateX(0); transition: transform 0.3s ease;
+        }
+        .sidebar-top, .sidebar-bottom { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+        .nav-item {
+            width: 46px; height: 46px; display: flex; justify-content: center; align-items: center;
+            cursor: pointer; transition: background 0.2s, opacity 0.2s; opacity: 0.65;
+            border-radius: 12px; text-decoration: none;
+        }
+        .nav-item.active, .nav-item:hover { opacity: 1; background-color: rgba(255,255,255,0.14); }
+        .nav-item img { width: 22px; height: 22px; filter: brightness(0) invert(1); }
+        .sidebar-avatar {
+            width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.14);
+            border: 1.5px solid rgba(255,255,255,0.35); color: #fff; font-size: 0.72rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
+        }
+        .logout-item { margin-bottom: 0; }
+
+        .sidebar-close-btn {
+            display: none; position: absolute; top: 14px; right: 14px; background: none; border: none;
+            color: #fff; opacity: 0.75; width: 32px; height: 32px; align-items: center; justify-content: center;
+            cursor: pointer; border-radius: 8px;
+        }
+        .sidebar-close-btn:hover { opacity: 1; background: rgba(255,255,255,0.14); }
+        .sidebar-close-btn svg { width: 18px; height: 18px; }
+
+        .app-topbar {
+            position: fixed; top: 0; left: 76px; width: calc(100% - 76px); height: 64px;
+            background: #fff; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 28px; z-index: 200;
+        }
+        .topbar-left { display: flex; align-items: center; gap: 16px; }
+        .hamburger-btn {
+            display: none; background: none; border: none; color: var(--green-900);
+            width: 34px; height: 34px; align-items: center; justify-content: center; cursor: pointer;
+            border-radius: 8px; flex-shrink: 0;
+        }
+        .hamburger-btn:hover { background: var(--green-100); }
+        .hamburger-btn img {
+            width: 20px; height: 20px;
+            filter: invert(17%) sepia(35%) saturate(1352%) hue-rotate(115deg) brightness(94%) contrast(92%);
+        }
+        .topbar-titles { display: flex; flex-direction: column; line-height: 1.25; }
+        .topbar-eyebrow { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+        .topbar-title { font-size: 1rem; font-weight: 600; color: var(--green-900); }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-avatar {
+            width: 36px; height: 36px; border-radius: 50%; background: var(--green-700); color: #fff;
+            font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+
+        .portal-content {
+            margin-left: 76px; width: 100%; padding: 96px 50px 50px;
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+        }
+
+        /* =============================================
+           RESIDENT NOTIFICATION PANEL
+           ============================================= */
+        .res-notif-wrapper { position:relative;display:flex;justify-content:center;align-items:center;padding:15px;cursor:pointer;opacity:0.65;transition:opacity 0.2s;border-radius:12px; }
+        .res-notif-wrapper:hover { opacity:1; }
+        .res-notif-wrapper img { width:22px;filter:brightness(0) invert(1); }
+        .res-notif-badge { position:absolute;top:8px;right:8px;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:none;align-items:center;justify-content:center;padding:0 3px;border:2px solid #004d2c;line-height:1; }
+        .res-notif-badge.on { display:flex; }
+        .res-notif-overlay { display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.25); }
+        .res-notif-overlay.show { display:block; }
+        .res-notif-panel { position:fixed;top:0;left:-420px;width:360px;max-width:90vw;height:100vh;background:#fff;border-radius:0 16px 16px 0;box-shadow:6px 0 30px rgba(0,0,0,0.14);z-index:9999;display:flex;flex-direction:column;transition:left 0.32s cubic-bezier(0.4,0,0.2,1);overflow:hidden; }
+        .res-notif-panel.open { left:76px; }
+        .res-panel-header { background:#1B4332;color:#fff;padding:20px 22px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px; }
+        .res-panel-header h3 { font-size:15px;font-weight:600;margin:0 0 2px; }
+        .res-panel-header small { font-size:11px;opacity:0.75;display:block; }
+        .res-panel-user { font-size:12px;opacity:0.85;margin-bottom:4px; }
+        .res-mark-read { background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px;cursor:pointer;white-space:nowrap; }
+        .res-notif-list { overflow-y:auto;flex:1; }
+        .res-notif-item { display:flex;gap:13px;padding:15px 18px;border-bottom:1px solid #f1f5f9;text-decoration:none;color:inherit; }
+        .res-notif-item.unread { background:#f0fdf4;border-left:3px solid #2D6A4F; }
+        .rn-dot { width:38px;height:38px;border-radius:50%;background:#e8f5e9;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+        .rn-dot img { width:17px;height:17px;filter:invert(29%) sepia(61%) saturate(446%) hue-rotate(105deg); }
+        .rn-body { flex:1;min-width:0; }
+        .rn-body strong { display:block;font-size:13px;color:#1a202c;margin-bottom:3px; }
+        .rn-body p { font-size:12px;color:#64748b;line-height:1.45;margin:0 0 4px; }
+        .rn-body time { font-size:11px;color:#94a3b8; }
+        .res-empty { text-align:center;padding:50px 20px;color:#94a3b8; }
+        .res-empty img { width:42px;opacity:0.28;display:block;margin:0 auto 12px; }
+
+        /* =============================================
+           FORM / DATA DISPLAY (shared with complaint-form.php)
+           ============================================= */
+        .top-nav { width: 100%; max-width: 800px; margin-bottom: 18px; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; color: #2D6A4F; font-size: 0.9rem; font-weight: 600; text-decoration: none; transition: gap 0.15s, color 0.15s; }
+        .back-link:hover { gap: 9px; color: #1B4332; }
+        .form-container { width: 100%; max-width: 800px; background: #fff; border-radius: 18px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); padding: 44px 48px; margin-bottom: 50px; }
+        .form-title { color: #1B4332; font-size: 1.6rem; font-weight: 700; text-align: center; letter-spacing: 0.08em; margin-bottom: 14px; }
+        .form-intro { color: #52796f; font-size: 0.88rem; line-height: 1.7; text-align: center; max-width: 620px; margin: 0 auto 32px; }
+        .section-header { display: flex; align-items: center; gap: 12px; margin: 34px 0 18px; padding-bottom: 10px; border-bottom: 1px solid #e0ede5; }
+        .section-header:first-of-type { margin-top: 0; }
+        .section-icon { width: 34px; height: 34px; padding: 7px; background: #e8f5e9; border-radius: 50%; filter: contrast(0.5); flex-shrink: 0; }
+        .section-header h3 { color: #1B4332; font-size: 1rem; font-weight: 600; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; }
+        .form-group { display: flex; flex-direction: column; margin-bottom: 18px; min-width: 0; }
+        .form-group label { font-size: 0.82rem; font-weight: 600; color: #1B4332; margin-bottom: 7px; }
+        .form-actions { display: flex; gap: 14px; margin-top: 32px; }
+        .submit-btn {
+            flex: 2; background: #1B4332; color: #fff; border: none; padding: 15px; border-radius: 10px;
+            font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: background 0.2s, transform 0.15s;
+        }
+        .submit-btn:hover { background: #2D6A4F; transform: translateY(-1px); }
+
         .status-badge{padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;display:inline-block;margin-bottom:10px;}
         .status-badge.pending          {background:#fef3c7;color:#92400e;}
         .status-badge.approved         {background:#d1fae5;color:#065f46;}
@@ -47,6 +179,49 @@ $sc           = strtolower(str_replace([' ','_'], '-', $status));
         .admin-comment-display{background:#fff8e7;border:1px solid #fcd34d;border-radius:8px;padding:14px 16px;margin-bottom:18px;}
         .admin-comment-display .aclabel{font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:5px;display:block;}
         .admin-comment-display p{font-size:14px;color:#78350f;margin:0;line-height:1.6;}
+
+        /* ---- Transition: drills in from the dashboard, slides back out ---- */
+        .portal-content {
+            animation: contentSlideIn .4s cubic-bezier(.16,1,.3,1) both;
+        }
+        @keyframes contentSlideIn {
+            from { opacity: 0; transform: translateX(24px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+        .portal-content.page-exit {
+            animation: contentSlideOut .22s ease forwards;
+        }
+        @keyframes contentSlideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to   { opacity: 0; transform: translateX(24px); }
+        }
+        .back-link { display: inline-block; transition: transform .15s ease, opacity .15s ease; }
+        .back-link:active { transform: translateX(-3px); }
+
+        /* ===================================
+           RESPONSIVE — sidebar becomes a drawer on mobile
+           =================================== */
+        @media screen and (max-width: 992px) {
+            .sidebar { transform: translateX(-100%); box-shadow: 6px 0 24px rgba(0,0,0,0.18); }
+            .sidebar.open { transform: translateX(0); }
+            .sidebar-close-btn { display: flex; }
+            .hamburger-btn { display: flex; }
+            .app-topbar { left: 0; width: 100%; padding: 0 16px; }
+            .portal-content { margin-left: 0; width: 100%; padding: 84px 20px 40px; }
+            .res-notif-panel.open { left: 0; }
+        }
+        @media screen and (max-width: 768px) {
+            .topbar-eyebrow { display: none; }
+            .topbar-title { font-size: 0.95rem; }
+            .portal-content { padding: 78px 16px 32px; }
+            .form-container { padding: 26px 20px; border-radius: 14px; }
+            .form-row { grid-template-columns: 1fr; gap: 0; }
+            .res-notif-panel { width: 100%; max-width: 100vw; }
+        }
+        @media screen and (max-width: 480px) {
+            .portal-content { padding: 74px 12px 28px; }
+            .form-container { padding: 20px 16px; }
+        }
 
         /* Modals */
         .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;justify-content:center;align-items:center;}
@@ -133,7 +308,71 @@ $sc           = strtolower(str_replace([' ','_'], '-', $status));
     </style>
 </head>
 <body>
-<?php include 'resident-sidebar.php'; ?>
+
+<!-- Top bar -->
+<header class="app-topbar">
+    <div class="topbar-left">
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Open menu">
+            <img src="menu.png" alt="Menu">
+        </button>
+        <div class="topbar-titles">
+            <span class="topbar-eyebrow">Resident Portal</span>
+            <span class="topbar-title">View Complaint</span>
+        </div>
+    </div>
+    <div class="topbar-right">
+        <div class="topbar-avatar" title="<?php echo htmlspecialchars($session_resident_name ?? 'Resident'); ?>">
+            <?php echo htmlspecialchars($initials); ?>
+        </div>
+    </div>
+</header>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebarNav">
+    <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+    </button>
+    <div class="sidebar-top">
+        <a href="resident-portal.php" class="nav-item" title="Dashboard">
+            <img src="dashboard.png" alt="Dashboard">
+        </a>
+        <a href="complaint-form.php" class="nav-item" title="File Complaint">
+            <img src="file.png" alt="File Complaint">
+        </a>
+        <div class="res-notif-wrapper nav-item" id="resBellBtn" title="Notifications">
+            <img src="bell.png" alt="Notifications" id="resBellIcon">
+            <span class="res-notif-badge" id="resBadge"></span>
+        </div>
+    </div>
+    <div class="sidebar-bottom">
+        <div class="sidebar-avatar" title="<?php echo htmlspecialchars($session_resident_name ?? 'Resident'); ?>">
+            <?php echo htmlspecialchars($initials); ?>
+        </div>
+        <a href="logout.php" class="nav-item logout-item" title="Logout">
+            <img src="people.png" alt="Logout">
+        </a>
+    </div>
+</nav>
+
+<!-- Backdrop shared by the mobile drawer and the notification panel -->
+<div class="res-notif-overlay" id="resOverlay"></div>
+
+<div class="res-notif-panel" id="resPanel">
+    <div class="res-panel-header">
+        <div>
+            <p class="res-panel-user">👤 <?php echo htmlspecialchars($session_resident_name ?? 'Resident'); ?></p>
+            <h3>My Notifications</h3>
+            <small id="resUnreadLabel">Loading…</small>
+        </div>
+        <button class="res-mark-read" id="resMarkRead">Mark all read</button>
+    </div>
+    <div class="res-notif-list" id="resNotifList">
+        <div class="res-empty"><img src="bell.png"><p>No notifications yet.</p></div>
+    </div>
+</div>
+
 
 <!-- APPROVED MODAL -->
 <div class="modal-bg" id="approvedModal">
@@ -344,7 +583,7 @@ $sc           = strtolower(str_replace([' ','_'], '-', $status));
         <?php endif; ?>
 
         <div class="form-actions" style="margin-top:36px;">
-            <button class="submit-btn" onclick="window.location.href='resident-portal.php'">Done</button>
+            <button class="submit-btn" onclick="goBackWithTransition('resident-portal.php')">Done</button>
         </div>
     </section>
 </main>
@@ -572,6 +811,119 @@ $sc           = strtolower(str_replace([' ','_'], '-', $status));
 
     function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
     function escJs(s)   { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+</script>
+
+<script>
+    // ---- Smooth transition back to the dashboard ----
+    function goBackWithTransition(href) {
+        const el = document.querySelector('.portal-content') || document.body;
+        el.classList.add('page-exit');
+        setTimeout(function() { window.location.href = href; }, 200);
+    }
+    document.addEventListener('click', function(e) {
+        const link = e.target.closest('.back-link');
+        if (!link) return;
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        goBackWithTransition(link.getAttribute('href'));
+    });
+    // Reset in case the page is restored from bfcache (browser back button)
+    window.addEventListener('pageshow', function() {
+        const el = document.querySelector('.portal-content');
+        if (el) el.classList.remove('page-exit');
+    });
+</script>
+
+<script>
+// Sidebar drawer + notifications
+(function() {
+    const bellBtn   = document.getElementById('resBellBtn');
+    const panel     = document.getElementById('resPanel');
+    const overlay   = document.getElementById('resOverlay');
+    const badge     = document.getElementById('resBadge');
+    const list      = document.getElementById('resNotifList');
+    const label     = document.getElementById('resUnreadLabel');
+    const markBtn   = document.getElementById('resMarkRead');
+    const sidebar   = document.getElementById('sidebarNav');
+    const hamburger = document.getElementById('hamburgerBtn');
+    const closeBtn  = document.getElementById('sidebarCloseBtn');
+    let panelOpen = false;
+    let drawerOpen = false;
+
+    function timeAgo(d) {
+        const s = Math.floor((new Date() - new Date(d)) / 1000);
+        if (s < 60)    return 'just now';
+        if (s < 3600)  return Math.floor(s/60)   + 'm ago';
+        if (s < 86400) return Math.floor(s/3600)  + 'h ago';
+        return Math.floor(s/86400) + 'd ago';
+    }
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function typeLabel(t) {
+        switch(t) {
+            case 'approved':      return '✅ Case Approved';
+            case 'rejected':      return '❌ Case Rejected';
+            case 'cannot_handle': return '⚠️ Cannot Be Handled';
+            case 'followup':      return '🔄 Follow-Up Required';
+            default:              return '🔔 Status Update';
+        }
+    }
+
+    function render(data) {
+        const { notifications, unread_count } = data;
+        if (unread_count > 0) {
+            badge.textContent = unread_count > 99 ? '99+' : unread_count;
+            badge.classList.add('on');
+        } else {
+            badge.classList.remove('on');
+        }
+        label.textContent = unread_count > 0
+            ? `${unread_count} new update${unread_count>1?'s':''}`
+            : "You're all caught up!";
+
+        if (!notifications.length) {
+            list.innerHTML = `<div class="res-empty"><img src="bell.png"><p>No notifications yet.</p></div>`;
+            return;
+        }
+        list.innerHTML = notifications.map(n => `
+            <a class="res-notif-item ${n.is_read==0?'unread':''}"
+               href="view-complaint.php?id=${n.complaint_id}">
+                <div class="rn-dot"><img src="bell.png" alt=""></div>
+                <div class="rn-body">
+                    <strong>${typeLabel(n.type)}</strong>
+                    <p>${esc(n.message)}</p>
+                    <time>${timeAgo(n.created_at)}</time>
+                </div>
+            </a>`).join('');
+    }
+
+    function fetch_notifs() {
+        fetch('get_resident_notifications.php?action=fetch')
+            .then(r=>r.json()).then(render).catch(()=>{});
+    }
+
+    function closeAll() {
+        panel.classList.remove('open');
+        sidebar.classList.remove('open');
+        overlay.classList.remove('show');
+        panelOpen = false;
+        drawerOpen = false;
+    }
+    function openPanel()  { closeAll(); panel.classList.add('open'); overlay.classList.add('show'); panelOpen = true; }
+    function openDrawer() { closeAll(); sidebar.classList.add('open'); overlay.classList.add('show'); drawerOpen = true; }
+
+    bellBtn.addEventListener('click', () => panelOpen ? closeAll() : openPanel());
+    if (hamburger) hamburger.addEventListener('click', () => drawerOpen ? closeAll() : openDrawer());
+    if (closeBtn) closeBtn.addEventListener('click', closeAll);
+    overlay.addEventListener('click', closeAll);
+    markBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fetch('get_resident_notifications.php?action=mark_read')
+            .then(r=>r.json()).then(()=>fetch_notifs());
+    });
+
+    fetch_notifs();
+    setInterval(fetch_notifs, 15000);
+})();
 </script>
 </body>
 </html>
